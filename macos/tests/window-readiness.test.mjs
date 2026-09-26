@@ -51,7 +51,10 @@ const baseRenderer = {
   suggestionLabels: [],
   suggestionLabelColorsMatch: true,
   projectButton: null,
-  composer: null,
+  composer: { visible: true, width: 620, height: 80 },
+  composerInput: { visible: true, width: 620, height: 48 },
+  composerPass: true,
+  genericComposerPass: false,
 };
 
 assert.equal(readyNativeWindow.status, "ready");
@@ -149,6 +152,41 @@ assert.equal(
   true,
   "A visible, laid-out ordinary route may use the strict DOM fallback.",
 );
+const loggedEmptyThreadSymptom = assessRendererVerification({
+  ...baseRenderer,
+  composer: null,
+  composerInput: null,
+  composerPass: false,
+  genericInput: null,
+  genericComposerInput: null,
+  genericComposerPass: false,
+  visibleMessageCount: 0,
+  visibleMarkdownCount: 0,
+}, unsupported, exactPayload);
+assert.equal(loggedEmptyThreadSymptom.nativeWindow.status, "unsupported");
+assert.equal(loggedEmptyThreadSymptom.scope.baseState, "thread");
+assert.equal(loggedEmptyThreadSymptom.scope.level, "L1");
+assert.equal(loggedEmptyThreadSymptom.shell.visible, true);
+assert.equal(loggedEmptyThreadSymptom.sidebar.visible, true);
+assert.equal(loggedEmptyThreadSymptom.composer, null);
+assert.equal(loggedEmptyThreadSymptom.genericInput, null);
+assert.equal(loggedEmptyThreadSymptom.checks.threadContentPass, false);
+assert.equal(loggedEmptyThreadSymptom.pass, false,
+  "The logged empty-thread symptom must remain unverified when native window lookup is unsupported.");
+const fakeComposerShell = assessRendererVerification({
+  ...baseRenderer,
+  composer: { visible: true, width: 620, height: 80 },
+  composerInput: null,
+  composerPass: false,
+  genericInput: null,
+  genericComposerInput: null,
+  genericComposerPass: false,
+  visibleMessageCount: 0,
+  visibleMarkdownCount: 0,
+}, unsupported, exactPayload);
+assert.equal(fakeComposerShell.checks.threadContentPass, false);
+assert.equal(fakeComposerShell.pass, false,
+  "A visible composer shell without a native input must not verify a thread.");
 
 const settingsRenderer = {
   ...baseRenderer,
@@ -198,6 +236,9 @@ assert.equal(
 assert.equal(
   assessRendererVerification({
     ...baseRenderer,
+    composerPass: false,
+    composerInput: null,
+    genericComposerPass: true,
     scope: {
       level: "L0",
       baseState: "thread",
@@ -214,6 +255,9 @@ assert.equal(
 assert.equal(
   assessRendererVerification({
     ...baseRenderer,
+    composerPass: false,
+    composerInput: null,
+    genericComposerPass: true,
     shell: null,
     sidebar: null,
     genericMain: { visible: true, width: 900, height: 640 },

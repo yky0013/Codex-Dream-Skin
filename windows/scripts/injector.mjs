@@ -1217,6 +1217,51 @@ export async function verifySession(
     const settingsAnchor = document.querySelector(${selectorLiteral("settings-panel")}) ||
       document.querySelector(${selectorLiteral("appearance-radio")}) ||
       document.querySelector(${stableTestidLiteral("theme-preview")});
+    const nativeInputSelector = 'textarea, [contenteditable="true"], [role="textbox"]';
+    const excludedInputAncestorSelector =
+      '[role="dialog"], [aria-modal="true"], aside, ' +
+      '[data-testid*="sidebar" i], [data-testid*="side-panel" i], ' +
+      '[class*="sidebar" i], [class*="side-panel" i], ' +
+      '[class~="bg-token-main-surface-primary"][class~="border-l"]';
+    const isAllowedInput = (node) => Boolean(node) &&
+      !node.closest?.(excludedInputAncestorSelector);
+    const composerNode = document.querySelector(${selectorLiteral("composer-chrome")});
+    const genericComposerNode = document.querySelector('[data-ds-part="composer"]');
+    const composerInputNode = composerNode?.querySelector?.(nativeInputSelector) ?? null;
+    const genericComposerInputNode = genericComposerNode?.querySelector?.(nativeInputSelector) ?? null;
+    const composerInput = box(composerInputNode);
+    const genericComposerInput = box(genericComposerInputNode);
+    const composerPass = Boolean(box(composerNode)?.visible && composerInput?.visible &&
+      isAllowedInput(composerInputNode));
+    const genericComposerPass = Boolean(box(genericComposerNode)?.visible &&
+      genericComposerInput?.visible && isAllowedInput(genericComposerInputNode));
+    const threadSurfaceNode = document.querySelector(${selectorLiteral("thread-surface")});
+    const shellMainNode = document.querySelector(${selectorLiteral("shell-main")});
+    const genericMainNode = document.querySelector('[data-ds-part="main"], [data-ds-part="home"]');
+    const excludedThreadAncestorSelector =
+      '[role="dialog"], [aria-modal="true"], aside, ' +
+      '[data-testid*="sidebar" i], [data-testid*="side-panel" i], ' +
+      '[class*="sidebar" i], [class*="side-panel" i], ' +
+      '[class~="bg-token-main-surface-primary"][class~="border-l"]';
+    const threadRootNode = threadSurfaceNode ?? shellMainNode ?? genericMainNode;
+    const isScopedThreadNode = (node) => {
+      if (!node || node.closest?.(excludedThreadAncestorSelector)) return false;
+      if (!threadRootNode?.contains) return false;
+      return threadRootNode.contains(node);
+    };
+    const threadSurface = box(threadSurfaceNode);
+    // A visible shell is not enough evidence that a thread route finished
+    // loading.  Keep the route signal structural and privacy-preserving:
+    // accept the real composer, the renderer's validated generic composer,
+    // or at least one visible semantic message/markdown node.  Arbitrary
+    // textboxes are deliberately excluded so a dialog or side-panel search
+    // field cannot make an empty conversation look ready.
+    const messageNodes = [...document.querySelectorAll(${selectorLiteral("message")})];
+    const markdownNodes = [...document.querySelectorAll(${selectorLiteral("markdown")})];
+    const visibleMessageCount = messageNodes.filter(isScopedThreadNode)
+      .map(box).filter((item) => item?.visible).length;
+    const visibleMarkdownCount = markdownNodes.filter(isScopedThreadNode)
+      .map(box).filter((item) => item?.visible).length;
     const runtime = window.__CODEX_DREAM_SKIN_STATE__;
     const adopted = runtime?.styleMode === 'adopted' &&
       [...document.adoptedStyleSheets].includes(runtime.styleSheet);
@@ -1261,7 +1306,14 @@ export async function verifySession(
       visibleCardCount: visibleCards.length,
       suggestionLabels,
       suggestionLabelColorsMatch,
-      composer: box(document.querySelector(${selectorLiteral("composer-chrome")})),
+      composer: box(composerNode),
+      composerInput,
+      genericComposerInput,
+      composerPass,
+      genericComposerPass,
+      threadSurface,
+      visibleMessageCount,
+      visibleMarkdownCount,
       shell: box(document.querySelector(${selectorLiteral("shell-main")})),
       sidebar: box(document.querySelector(${selectorLiteral("left-panel")})),
       genericMain: box(document.querySelector('[data-ds-part="main"], [data-ds-part="home"]')),
@@ -1282,7 +1334,12 @@ export async function verifySession(
       Boolean(result.genericInput?.visible || (homeScope && result.homeSurface?.visible));
     const l0StructurePass = result.scope?.level === 'L0' &&
       result.scope?.baseState === 'settings' && Boolean(result.settingsAnchor?.visible);
-    const structurePass = l0StructurePass || (l1ScopePass &&
+    const threadScope = result.scope?.baseState === 'thread';
+    const threadContentPass = !threadScope || Boolean(
+      result.composerPass || result.genericComposerPass ||
+      result.visibleMessageCount > 0 || result.visibleMarkdownCount > 0,
+    );
+    const structurePass = l0StructurePass || (l1ScopePass && threadContentPass &&
       (Boolean(result.shell?.visible && result.sidebar?.visible) || genericStructurePass));
     const documentPass = result.documentVisibility === 'visible' && !result.documentHidden;
     const viewportPass = result.viewport.width >= ${MIN_RENDERER_VIEWPORT_WIDTH} &&
@@ -1306,6 +1363,7 @@ export async function verifySession(
     result.expectedRevision = expectedRevision;
     result.readiness = {
       windowPass, documentPass, viewportPass, structurePass,
+      threadContentPass,
       nativeWindowPass, fallbackWindowPass,
     };
     const homePass = !homeScope || (

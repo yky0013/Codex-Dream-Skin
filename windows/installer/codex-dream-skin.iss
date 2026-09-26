@@ -86,6 +86,39 @@ Root: HKCU; Subkey: "Software\Classes\dreamskin\shell\open\command"; ValueType: 
 Filename: "{#PowerShellPath}"; Parameters: "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy RemoteSigned -File ""{app}\setup-bootstrap.ps1"" -LaunchTray"; WorkingDir: "{app}"; Description: "Launch Codex Dream Skin"; Flags: nowait postinstall skipifsilent
 
 [Code]
+const
+  BootstrapInstallPayloadExitCode = 61;
+  BootstrapInstallRuntimeExitCode = 62;
+  BootstrapInstallValidationExitCode = 63;
+  BootstrapUninstallRestoreExitCode = 71;
+  BootstrapUninstallCleanupExitCode = 72;
+  BootstrapTrayExitCode = 80;
+
+function BootstrapDiagnosticPath(): String;
+begin
+  Result := ExpandConstant('{localappdata}\CodexDreamSkin\setup-failure.json');
+end;
+
+function BootstrapFailurePhaseDescription(const ExitCode: Integer): String;
+begin
+  case ExitCode of
+    BootstrapInstallPayloadExitCode:
+      Result := 'installer preflight or payload validation';
+    BootstrapInstallRuntimeExitCode:
+      Result := 'runtime, theme, or Codex configuration initialization';
+    BootstrapInstallValidationExitCode:
+      Result := 'post-install runtime validation';
+    BootstrapUninstallRestoreExitCode:
+      Result := 'uninstall preflight or Codex appearance restore';
+    BootstrapUninstallCleanupExitCode:
+      Result := 'uninstall runtime cleanup after the restore step';
+    BootstrapTrayExitCode:
+      Result := 'tray launch';
+  else
+    Result := 'installer bootstrap';
+  end;
+end;
+
 function PowerShellArguments(
   const ScriptPath: String;
   const ActionArguments: String;
@@ -117,8 +150,27 @@ end;
 
 function InstallInitializationFailureMessage(const ExitCode: Integer): String;
 begin
-  Result := 'Codex Dream Skin could not be initialized (exit code ' +
-    IntToStr(ExitCode) + '). No installed application files were changed.';
+  Result := 'Codex Dream Skin installation did not complete during ' +
+    BootstrapFailurePhaseDescription(ExitCode) + ' (exit code ' +
+    IntToStr(ExitCode) + '). Setup did not commit its application files, but '
+    + 'managed state may have changed. Diagnostic record (if available): ' +
+    BootstrapDiagnosticPath();
+end;
+
+function UninstallFailureMessage(const ExitCode: Integer): String;
+begin
+  if ExitCode = BootstrapUninstallCleanupExitCode then
+    Result := 'Codex Dream Skin uninstall did not complete during runtime cleanup '
+      + 'after the restore step (exit code ' + IntToStr(ExitCode) + '). Runtime '
+      + 'cleanup was not verified; installed files may remain and configuration '
+      + 'or shortcuts may already have changed. Diagnostic record (if available): '
+      + BootstrapDiagnosticPath()
+  else
+    Result := 'Codex Dream Skin uninstall did not complete during ' +
+      BootstrapFailurePhaseDescription(ExitCode) + ' (exit code ' +
+      IntToStr(ExitCode) + '). Installed files were retained, but configuration '
+      + 'or shortcuts may already have changed. Diagnostic record (if available): '
+      + BootstrapDiagnosticPath();
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -147,10 +199,11 @@ begin
 
   { The standard Inno confirmation has completed before usUninstall. }
   if not RunBootstrap(ExpandConstant('{app}\setup-bootstrap.ps1'), '-Uninstall', True, ExitCode) then
-    RaiseException('Codex Dream Skin restoration could not be started. No installed files were removed.');
-  if ExitCode <> 0 then
     RaiseException(
-      'Codex Dream Skin could not restore Codex (exit code ' +
-      IntToStr(ExitCode) + '). No installed files were removed.'
+      'Codex Dream Skin uninstall could not be started. Installed files were retained; '
+      + 'check the installer log and retry. Diagnostic record (if available): ' +
+      BootstrapDiagnosticPath()
     );
+  if ExitCode <> 0 then
+    RaiseException(UninstallFailureMessage(ExitCode));
 end;

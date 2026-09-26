@@ -1,5 +1,11 @@
 # Codex Dream Skin
 
+> 本仓库是 [yky0013 的维护分支](https://github.com/yky0013/Codex-Dream-Skin)，基于
+> [Fei-Away/Codex-Dream-Skin](https://github.com/Fei-Away/Codex-Dream-Skin) 开发。
+> 当前优先处理 Windows 对话页空白时的错误成功判定与安装器诊断。
+> 这些改动尚未发布为安装包；上游下载链接仍指向上游版本。
+> 进展与验收边界见 [Windows 开发说明](docs/windows-conversation-readiness.md)。
+
 <p align="center">
   <strong>中文</strong> · <a href="./README.en.md">English</a>
 </p>

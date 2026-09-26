@@ -75,8 +75,9 @@ foreach ($requiredDefinition in @(
   'procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);',
   'if CurUninstallStep <> usUninstall then',
   "RunBootstrap(ExpandConstant('{app}\setup-bootstrap.ps1'), '-Uninstall', True, ExitCode)",
-  "'Codex Dream Skin could not restore Codex (exit code ' +",
-  "IntToStr(ExitCode) + '). No installed files were removed.'",
+  'function UninstallFailureMessage(const ExitCode: Integer): String;',
+  'Diagnostic record (if available):',
+  'setup-failure.json',
   '[Registry]',
   'Root: HKCU; Subkey: "Software\Classes\dreamskin"',
   'ValueName: "URL Protocol"; ValueData: ""',
@@ -123,7 +124,7 @@ $runBootstrapIndex = $definition.IndexOf(
   [System.StringComparison]::Ordinal
 )
 $uninstallFailureIndex = $definition.LastIndexOf(
-  "'Codex Dream Skin could not restore Codex (exit code ' +",
+  'RaiseException(UninstallFailureMessage(ExitCode));',
   [System.StringComparison]::Ordinal
 )
 if ($uninstallStepIndex -lt 0 -or $runBootstrapIndex -le $uninstallStepIndex -or
@@ -197,7 +198,19 @@ foreach ($requiredRepairContract in @(
   'runtime\node\LICENSE',
   '$missingEngineFiles.Count -eq 0',
   'A newer Codex Dream Skin',
-  'The installer payload is missing its bundled Node.js runtime'
+  'The installer payload is missing its bundled Node.js runtime',
+  'function Set-DreamSkinBootstrapPhase',
+  'function Invoke-DreamSkinBootstrapChild',
+  'function Get-DreamSkinBootstrapFailureCategory',
+  'function Write-DreamSkinBootstrapFailureRecord',
+  'function Get-DreamSkinBootstrapFailureOutcome',
+  'function Get-DreamSkinBootstrapExitCode',
+  'DreamSkinBootstrapFailureCategories',
+  'setup-failure.json',
+  'DreamSkinBootstrapFailureMaxBytes = 4096',
+  'Write-DreamSkinUtf8FileAtomically',
+  'Assert-DreamSkinNoReparseComponents',
+  '[Console]::Error.WriteLine($safeMessage)'
 )) {
   if (-not $bootstrap.Contains($requiredRepairContract)) {
     throw "Installer same-version repair coverage is missing: $requiredRepairContract"
@@ -210,7 +223,8 @@ foreach ($requiredUninstallBinding in @(
   'ForceRestart = $true',
   'NoRelaunch = $true',
   '$restoreParameters.RestoreBaseTheme = $true',
-  '& $engine.Restore @restoreParameters'
+  'Invoke-DreamSkinBootstrapChild -ScriptPath $engine.Restore',
+  "-Phase 'uninstall-restore'"
 )) {
   if (-not $bootstrap.Contains($requiredUninstallBinding)) {
     throw "Installer restore parameter binding is missing: $requiredUninstallBinding"
@@ -218,6 +232,13 @@ foreach ($requiredUninstallBinding in @(
 }
 if ($bootstrap.Contains('@restoreArguments')) {
   throw 'Installer restore switches must not use positional array splatting.'
+}
+if ($definition.Contains('No installed files were removed.') -or
+  $definition.Contains('No installed application files were changed.')) {
+  throw 'Installer failure messages must not claim that uninstall or bootstrap caused no changes.'
+}
+if ($bootstrap.Contains('Write-Error $_')) {
+  throw 'Bootstrap failure handling must not emit raw exception text.'
 }
 
 foreach ($requiredSecurityBootstrap in @(
@@ -296,5 +317,11 @@ try {
 } finally {
   Remove-Item -LiteralPath $iconTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+$failureTestPath = Join-Path $PSScriptRoot 'setup-bootstrap-failure.tests.ps1'
+if (-not (Test-Path -LiteralPath $failureTestPath -PathType Leaf)) {
+  throw "Focused bootstrap failure test is missing: $failureTestPath"
+}
+& $failureTestPath -Root $windowsRoot
 
 Write-Host 'PASS: Windows installer manifest, policy, bootstrap, uninstall, startup, and build contracts.'
