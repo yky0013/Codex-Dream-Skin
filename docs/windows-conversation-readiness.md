@@ -43,6 +43,11 @@ These changes fix verification and diagnosis. They do not establish the cause of
 reported conversation-loading failure, and they must not be advertised as a complete
 fix for that symptom before live navigation tests pass.
 
+Unknown utility routes currently inherit the renderer's `thread` classification. A
+utility page without a native editor or conversation content can therefore fail this
+strict check. Verify from Home or an actual conversation; utility-route classification
+needs explicit native-route fixtures before this fork is released.
+
 ## Live acceptance before packaging
 
 1. Start from a working official app with an existing conversation. Record only structural
@@ -80,3 +85,17 @@ powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File windows/tests/inst
 
 Some macOS shell/native tests require macOS and must run in CI there. Keep test results,
 local implementation, pushed commits, pull requests, and downloadable releases distinct.
+
+## Development validation (2026-09-26)
+
+- 52 Windows/tool and macOS renderer/thread Node tests passed on Windows.
+- The empty-shell regression fails against unmodified upstream v1.5.18 and passes here.
+- Windows PowerShell 5.1 and PowerShell 7 full runtime suites passed.
+- Both PowerShell versions passed installer static checks and the focused failure
+  tests, including a real silent bootstrap process returning its classified exit code.
+- Shared-asset synchronization, selector provenance, and both payload checks passed.
+- Full macOS native/shell testing and Inno Setup compilation require CI; no live
+  conversation-navigation or installed-package signoff has been completed.
+
+Fork CI is enabled for review. Automatic Release remains disabled until fork download
+URLs, versioning, packaging and live acceptance have been reviewed.
