@@ -237,11 +237,16 @@ export function assessRendererVerification(renderer, nativeWindow, expected) {
   const homeRoute = result.scope?.baseState === "home" || result.homeRoute || result.homePresent;
   const l1ScopePass = result.scope?.level === "L1" &&
     Array.isArray(result.scope?.missingL1) && result.scope.missingL1.length === 0;
+  const threadScope = result.scope?.baseState === "thread";
+  const threadContentPass = !threadScope || Boolean(
+    result.composerPass || result.genericComposerPass ||
+    result.visibleMessageCount > 0 || result.visibleMarkdownCount > 0,
+  );
   const genericStructurePass = l1ScopePass && Boolean(result.genericMain?.visible) &&
-    (Boolean(result.genericInput?.visible) || Boolean(homeRoute && result.homePresent));
+    (Boolean(result.genericComposerPass) || Boolean(homeRoute && result.homePresent));
   const l0StructurePass = result.scope?.level === "L0" &&
     settingsRoute && Boolean(result.settings?.visible);
-  const structurePass = l0StructurePass || (l1ScopePass && (
+  const structurePass = l0StructurePass || (l1ScopePass && threadContentPass && (
     (Boolean(result.shell?.visible) && Boolean(result.sidebar?.visible)) || genericStructurePass
   ));
   const nativeWindowPass = nativeWindow?.status === "ready";
@@ -272,6 +277,7 @@ export function assessRendererVerification(renderer, nativeWindow, expected) {
     nativeWindowPass,
     payloadPass,
     structurePass,
+    threadContentPass,
     viewportPass,
     windowPass,
   };
@@ -1187,10 +1193,49 @@ export async function verifySession(session, expectedThemeId = null, expectedRev
       ?? box(boxableChain[boxableChain.length - 1]);
     const projectButton = box(home?.querySelector(${selectorLiteral("project-selector")} + " > button"));
     const shell = box(document.querySelector(${selectorLiteral("shell-main")}));
-    const composer = box(document.querySelector(${selectorLiteral("composer-chrome")}));
+    const nativeInputSelector = 'textarea, [contenteditable="true"], [role="textbox"]';
+    const excludedInputAncestorSelector =
+      '[role="dialog"], [aria-modal="true"], aside, ' +
+      '[data-testid*="sidebar" i], [data-testid*="side-panel" i], ' +
+      '[class*="sidebar" i], [class*="side-panel" i], ' +
+      '[class~="bg-token-main-surface-primary"][class~="border-l"]';
+    const isAllowedInput = (node) => Boolean(node) &&
+      !node.closest?.(excludedInputAncestorSelector);
+    const composerNode = document.querySelector(${selectorLiteral("composer-chrome")});
+    const genericComposerNode = document.querySelector('[data-ds-part="composer"]');
+    const composerInputNode = composerNode?.querySelector?.(nativeInputSelector) ?? null;
+    const genericComposerInputNode = genericComposerNode?.querySelector?.(nativeInputSelector) ?? null;
+    const composer = box(composerNode);
+    const composerInput = box(composerInputNode);
+    const genericComposerInput = box(genericComposerInputNode);
+    const composerPass = Boolean(composer?.visible && composerInput?.visible &&
+      isAllowedInput(composerInputNode));
+    const genericComposerPass = Boolean(box(genericComposerNode)?.visible &&
+      genericComposerInput?.visible && isAllowedInput(genericComposerInputNode));
     const sidebar = box(document.querySelector(${selectorLiteral("left-panel")}));
     const genericMain = box(document.querySelector('[data-ds-part="main"], [data-ds-part="home"]'));
     const genericInput = box(document.querySelector('[data-ds-part="composer"]'));
+    const threadSurfaceNode = document.querySelector(${selectorLiteral("thread-surface")});
+    const shellMainNode = document.querySelector(${selectorLiteral("shell-main")});
+    const genericMainNode = document.querySelector('[data-ds-part="main"], [data-ds-part="home"]');
+    const excludedThreadAncestorSelector =
+      '[role="dialog"], [aria-modal="true"], aside, ' +
+      '[data-testid*="sidebar" i], [data-testid*="side-panel" i], ' +
+      '[class*="sidebar" i], [class*="side-panel" i], ' +
+      '[class~="bg-token-main-surface-primary"][class~="border-l"]';
+    const threadRootNode = threadSurfaceNode ?? shellMainNode ?? genericMainNode;
+    const isScopedThreadNode = (node) => {
+      if (!node || node.closest?.(excludedThreadAncestorSelector)) return false;
+      if (!threadRootNode?.contains) return false;
+      return threadRootNode.contains(node);
+    };
+    const threadSurface = box(threadSurfaceNode);
+    const messageNodes = [...document.querySelectorAll(${selectorLiteral("message")})];
+    const markdownNodes = [...document.querySelectorAll(${selectorLiteral("markdown")})];
+    const visibleMessageCount = messageNodes.filter(isScopedThreadNode)
+      .map(box).filter((item) => item?.visible).length;
+    const visibleMarkdownCount = markdownNodes.filter(isScopedThreadNode)
+      .map(box).filter((item) => item?.visible).length;
     const settingsBoxes = [
       box(document.querySelector(${selectorLiteral("settings-panel")})),
       box(document.querySelector(${selectorLiteral("appearance-radio")})),
@@ -1225,9 +1270,16 @@ export async function verifySession(session, expectedThemeId = null, expectedRev
       projectButton,
       shell,
       composer,
+      composerInput,
+      genericComposerInput,
+      composerPass,
+      genericComposerPass,
       sidebar,
       genericMain,
       genericInput,
+      threadSurface,
+      visibleMessageCount,
+      visibleMarkdownCount,
       settings,
       viewport: { width: innerWidth, height: innerHeight },
       documentOverflow: {

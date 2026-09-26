@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (yky0013 fork)
+
+- Align conversation readiness with Windows: shell geometry alone is not a loaded conversation. Preserve Home/settings behavior and supported native-window fallback.
+- Native macOS validation remains required before releasing this fork.
+
 ## 1.5.18
 
 - 修复 Codex 26.901.41123 首页建议卡文字改用 `text-default` 后未跟随主题色、导致实机校验失败的问题；保留旧文字类兼容及图标强调色，不放宽校验。

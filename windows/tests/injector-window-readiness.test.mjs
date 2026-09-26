@@ -12,11 +12,15 @@ const startPath = path.resolve(here, "../scripts/start-dream-skin.ps1");
 const selectors = {
   shell: 'main:is(.main-surface, [data-app-shell-main-surface], [class*="_MainContentSurface_"])',
   sidebar: "aside.app-shell-left-panel",
-  composer: ".composer-surface-chrome",
+  composer: ':is(.composer-surface-chrome, [class*="_ComposerLayoutRoot_"], [data-composer-surface-variant][data-composer-radius-variant])',
+  nativeInput: 'textarea, [contenteditable="true"], [role="textbox"]',
   homeIcon: '[data-testid="home-icon"]',
   home: '[role="main"]:has([data-testid="home-icon"])',
   gameSource: '[data-feature="game-source"]',
   suggestions: ".group\\/home-suggestions",
+  markdown: '[class*="_markdown"]',
+  threadSurface: ".thread-scroll-container",
+  message: ':is([data-message-author-role], [data-local-conversation-user-anchor], [data-local-conversation-final-assistant])',
   settings: 'input[name="appearance-theme"]',
   themePreview: '[data-testid="theme-preview"]',
 };
@@ -31,6 +35,7 @@ function makeElement({
   visible = true,
   text = "",
   children = [],
+  closest = () => null,
 } = {}) {
   const element = {
     isConnected: true,
@@ -47,6 +52,7 @@ function makeElement({
     children,
     getBoundingClientRect: () => rect,
     checkVisibility: () => visible,
+    closest,
     querySelector: () => null,
     querySelectorAll: () => [],
   };
@@ -85,10 +91,15 @@ function makeDomFixture({
   shell = makeElement(),
   sidebar = makeElement(),
   composer = makeElement(),
+  composerInput = makeElement({ rect: makeRect(520, 44, 260, 700) }),
   home = null,
   homeSignal = null,
   genericMain = null,
   genericInput = null,
+  genericComposerInput = makeElement({ rect: makeRect(520, 44, 260, 700) }),
+  threadSurface = null,
+  messages = [],
+  markdownNodes = [],
   settings = null,
   visibilityState = "visible",
   hidden = false,
@@ -98,6 +109,16 @@ function makeDomFixture({
   scrollHeight = viewportHeight,
 } = {}) {
   const styleNode = {};
+  if (composer) {
+    composer.querySelector = (selector) => selector === selectors.nativeInput ? composerInput : null;
+  }
+  if (genericInput) {
+    genericInput.querySelector = (selector) => selector === selectors.nativeInput
+      ? genericComposerInput : null;
+  }
+  if (threadSurface) {
+    threadSurface.contains = (node) => messages.includes(node);
+  }
   const documentElement = {
     scrollWidth,
     clientWidth: viewportWidth,
@@ -117,12 +138,17 @@ function makeDomFixture({
       if (selector === selectors.homeIcon) return null;
       if (selector === selectors.home) return home;
       if (selector === selectors.gameSource || selector === selectors.suggestions) return homeSignal;
+      if (selector === selectors.threadSurface) return threadSurface;
       if (selector === '[data-ds-part="main"], [data-ds-part="home"]') return genericMain ?? home;
       if (selector === '[data-ds-part="composer"]') return genericInput;
       if (selector === selectors.settings || selector === selectors.themePreview) return settings;
       return null;
     },
-    querySelectorAll: () => [],
+    querySelectorAll: (selector) => {
+      if (selector === selectors.message) return messages;
+      if (selector === selectors.markdown) return markdownNodes;
+      return [];
+    },
     getElementById: (id) => id === "codex-dream-skin-style" ? styleNode : null,
   };
   const window = {
@@ -192,6 +218,7 @@ test("normal L1 renderer requires and records the exact target window binding", 
     documentPass: true,
     viewportPass: true,
     structurePass: true,
+    threadContentPass: true,
     nativeWindowPass: true,
     fallbackWindowPass: false,
   });
@@ -296,6 +323,120 @@ test("visible settings is the only L0 structure exception", async () => {
   assert.equal(falseHome.result.homePresent, false);
   assert.equal(falseHome.result.pass, false,
     "A renderer that claims Home must expose a real Home identity signal.");
+});
+
+test("L1 thread readiness rejects an empty shell and accepts composer or visible history", async () => {
+  const emptyShell = await verify({
+    bindingError: new Error("No window with given target found (-32000)"),
+    dom: makeDomFixture({
+      shell: makeElement({ rect: makeRect(970, 772, 306, 44) }),
+      sidebar: makeElement({ rect: makeRect(306, 772, 0, 44) }),
+      composer: null,
+      composerInput: null,
+      genericMain: makeElement({ rect: makeRect(970, 772, 306, 44) }),
+      genericInput: null,
+      threadSurface: null,
+    }),
+  });
+  assert.equal(emptyShell.result.scope.baseState, "thread");
+  assert.equal(emptyShell.result.pass, false,
+    "A shell-only renderer must not verify as a loaded thread, including Browser API fallback.");
+  assert.equal(emptyShell.result.composer, null);
+  assert.equal(emptyShell.result.genericInput, null);
+  assert.equal(emptyShell.result.threadSurface, null);
+  assert.equal(emptyShell.result.visibleMessageCount, 0);
+  assert.equal(emptyShell.result.visibleMarkdownCount, 0);
+  assert.equal(emptyShell.result.readiness.threadContentPass, false);
+  assert.equal(emptyShell.result.readiness.structurePass, false);
+  assert.equal(emptyShell.result.pass, false,
+    "A shell-only renderer must not verify as a loaded thread.");
+
+  const composerShellWithoutInput = await verify({
+    dom: makeDomFixture({
+      composer: makeElement({ rect: makeRect(620, 80, 180, 620) }),
+      composerInput: null,
+    }),
+  });
+  assert.equal(composerShellWithoutInput.result.composer?.visible, true);
+  assert.equal(composerShellWithoutInput.result.composerInput, null);
+  assert.equal(composerShellWithoutInput.result.readiness.threadContentPass, false,
+    "A composer shell without a native input must not satisfy thread readiness.");
+  assert.equal(composerShellWithoutInput.result.pass, false);
+
+  const visibleHistory = await verify({
+    dom: makeDomFixture({
+      composer: null,
+      composerInput: null,
+      threadSurface: makeElement({ rect: makeRect(900, 650, 330, 90) }),
+      messages: [makeElement({ rect: makeRect(720, 120, 420, 180), text: "Existing turn" })],
+    }),
+  });
+  assert.equal(visibleHistory.result.visibleMessageCount, 1);
+  assert.equal(visibleHistory.result.readiness.threadContentPass, true);
+  assert.equal(visibleHistory.result.pass, true,
+    "A read-only thread with visible semantic history must remain valid without a composer.");
+});
+
+test("dialog and side-panel inputs do not satisfy the thread composer signal", async () => {
+  const dialogInput = await verify({
+    dom: makeDomFixture({
+      composer: null,
+      composerInput: null,
+      genericInput: makeElement({
+        rect: makeRect(520, 44, 260, 700),
+      }),
+      genericComposerInput: makeElement({
+        rect: makeRect(520, 44, 260, 700),
+        closest: () => ({}),
+      }),
+    }),
+  });
+  assert.equal(dialogInput.result.genericInput?.visible, true);
+  assert.equal(dialogInput.result.genericComposerPass, false);
+  assert.equal(dialogInput.result.readiness.threadContentPass, false);
+  assert.equal(dialogInput.result.pass, false);
+});
+
+test("offscreen or unrelated semantic content cannot verify an empty conversation", async () => {
+  for (const message of [
+    makeElement({ visible: false }),
+    makeElement({ rect: makeRect(700, 100, 400, 1500) }),
+    makeElement({ closest: () => ({}) }),
+  ]) {
+    const { result } = await verify({
+      dom: makeDomFixture({
+        composer: null,
+        threadSurface: makeElement(),
+        messages: [message],
+      }),
+    });
+    assert.equal(result.pass, false);
+    assert.equal(result.visibleMessageCount, 0);
+  }
+  const unrelatedMarkdown = await verify({
+    dom: makeDomFixture({
+      composer: null,
+      threadSurface: makeElement(),
+      markdownNodes: [makeElement()],
+    }),
+  });
+  assert.equal(unrelatedMarkdown.result.pass, false);
+  assert.equal(unrelatedMarkdown.result.visibleMarkdownCount, 0);
+});
+
+test("workspace-panel token classes cannot supply the conversation input", async () => {
+  const panelSelector = '[class~="bg-token-main-surface-primary"][class~="border-l"]';
+  const { result } = await verify({
+    dom: makeDomFixture({
+      composer: null,
+      genericInput: makeElement(),
+      genericComposerInput: makeElement({
+        closest: (selector) => selector.includes(panelSelector) ? {} : null,
+      }),
+    }),
+  });
+  assert.equal(result.pass, false);
+  assert.equal(result.genericComposerPass, false);
 });
 
 test("home verification matches macOS and does not require a fixed suggestion-card count", async () => {

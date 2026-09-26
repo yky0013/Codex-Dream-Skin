@@ -1,5 +1,11 @@
 # Windows Changelog
 
+## Unreleased (yky0013 fork)
+
+- Reject conversation verification when only the shell/sidebar is visible. Require a visible native editor or scoped conversation content; ignore dialog and side-panel controls.
+- Add phase-based, sanitized Windows bootstrap diagnostics and accurate partial-uninstall failure messages.
+- The reported endless conversation spinner still requires live reproduction and navigation/restore verification; this entry does not claim that root cause is fixed.
+
 ## 1.5.18
 
 - 同步首页建议卡新旧文字类的共享主题色规则；macOS 26.901.41123 提供实际类名证据，Windows 原生表现仍由对应平台验收。

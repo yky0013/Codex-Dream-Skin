@@ -9,7 +9,8 @@ import { SKIN_VERSION, verifySession, waitForVerifiedSession } from "../scripts/
 const selectors = {
   shell: 'main:is(.main-surface, [data-app-shell-main-surface], [class*="_MainContentSurface_"])',
   sidebar: "aside.app-shell-left-panel",
-  composer: ".composer-surface-chrome",
+  composer: ':is(.composer-surface-chrome, [class*="_ComposerLayoutRoot_"], [data-composer-surface-variant][data-composer-radius-variant])',
+  nativeInput: 'textarea, [contenteditable="true"], [role="textbox"]',
   home: '[role="main"]:has([data-testid="home-icon"])',
   homeIcon: '[data-testid="home-icon"]',
   gameSource: '[data-feature="game-source"]',
@@ -54,12 +55,17 @@ function makeDomFixture({
   shell = makeElement(),
   sidebar = makeElement(),
   composer = makeElement(),
+  composerInput = makeElement(),
   settings = null,
   visibilityState = "visible",
   viewportWidth = 1280,
   viewportHeight = 800,
 } = {}) {
   const styleNode = {};
+  if (composer) {
+    composer.querySelector = (selector) => selector === selectors.nativeInput
+      ? composerInput : null;
+  }
   const documentElement = {
     scrollWidth: viewportWidth,
     clientWidth: viewportWidth,
